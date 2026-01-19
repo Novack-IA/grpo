@@ -24,8 +24,6 @@ def process_and_export(file_path, output_dir="data/processed"):
     sys_prompt = fix_encoding(raw_data['prompts']['generator'])
     eval_prompt = fix_encoding(raw_data['prompts']['evaluator'])
 
-    # 3. Salvar o prompts.py com as variáveis limpas
-    # Usamos repr() para garantir que caracteres especiais não quebrem a string do Python
     with open(src_path / "prompts.py", "w", encoding="utf-8") as f:
         f.write("# -*- coding: utf-8 -*-\n\n")
         f.write(f'SYSTEM_PROMPT = """{sys_prompt}"""\n\n')
