@@ -9,3 +9,11 @@ wheels/
 # Virtual environments
 .venv
 laudite_phi4.sif
+.env 
+grpo_dataset.json
+prepare_data.py
+wandb
+data
+slurm-*.out
+slurm 
+runs

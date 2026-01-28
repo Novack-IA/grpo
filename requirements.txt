@@ -1,0 +1,8 @@
+trl
+transformers
+datasets
+accelerate
+peft
+wandb
+python-dotenv
+google-genai
