@@ -1,22 +1,19 @@
 import os
-
+import torch
 from datasets import load_dataset
 from dotenv import load_dotenv
 from peft import LoraConfig
-from transformers import AutoTokenizer
-
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
-
 from reward_gemini import gemini_judge_reward
 from prompts import SYSTEM_PROMPT, JUDGE_PROMPT
 
 load_dotenv()
 os.environ["JUDGE_PROMPT"] = JUDGE_PROMPT 
 
-
 def main():
     model_name = os.getenv("MODEL_NAME", "microsoft/phi-4")
-    data_path = os.getenv("TRAIN_DATA", "data/train.jsonl")
+    data_path = os.getenv("TRAIN_DATA", "data/train.json") 
     output_dir = os.getenv("OUTPUT_DIR", "runs/phi4-grpo-lora")
 
     # W&B
@@ -28,7 +25,6 @@ def main():
 
     ds = load_dataset("json", data_files=data_path, split="train")
 
-    # Flatten extra.*
     def flatten(ex):
         extra = ex.get("extra", {}) or {}
         return {
@@ -44,15 +40,26 @@ def main():
 
     ds = ds.map(flatten, remove_columns=ds.column_names)
 
-    # prompt do Phi-4 = SYSTEM_PROMPT + input
     def build_prompt(ex):
         return {"prompt": SYSTEM_PROMPT + "\n\n" + ex["input"]}
 
     ds = ds.map(build_prompt)
 
+    print(f"--- Carregando modelo {model_name} (Modo PyTorch Nativo - Sem vLLM) ---")
+    
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # Carregamos com SDPA para ser rápido na H100
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        dtype=torch.bfloat16,           
+        attn_implementation="sdpa",     
+        device_map="cuda"              
+    )
+    
+    print("--- Modelo carregado. Iniciando Trainer... ---")
 
     peft_config = LoraConfig(
         r=int(os.getenv("LORA_R", "16")),
@@ -70,24 +77,24 @@ def main():
         learning_rate=float(os.getenv("LR", "1e-5")),
         num_train_epochs=float(os.getenv("EPOCHS", "1")),
         logging_steps=int(os.getenv("LOGGING_STEPS", "1")),
-        save_steps=int(os.getenv("SAVE_STEPS", "100")),
-        bf16=True,  # H100
-
+        save_steps=int(os.getenv("SAVE_STEPS", "10")),
+        bf16=True, 
         report_to=["wandb"],
-
-        # GRPO rollouts
         num_generations=int(os.getenv("NUM_GENERATIONS", "4")),
         max_prompt_length=int(os.getenv("MAX_PROMPT_LEN", "4096")),
         max_completion_length=int(os.getenv("MAX_COMPLETION_LEN", "1536")),
         temperature=float(os.getenv("TEMPERATURE", "0.7")),
         top_p=float(os.getenv("TOP_P", "0.95")),
-
-        use_vllm=True,
+        
+        
+        use_vllm=False,
+        
+        
         disable_dropout=True,
     )
 
     trainer = GRPOTrainer(
-        model=model_name,
+        model=model,
         args=args,
         train_dataset=ds,
         processing_class=tokenizer,
@@ -97,7 +104,6 @@ def main():
 
     trainer.train()
     trainer.save_model(output_dir)
-
 
 if __name__ == "__main__":
     main()

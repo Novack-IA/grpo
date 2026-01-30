@@ -14,6 +14,6 @@ grpo_dataset.json
 prepare_data.py
 wandb
 data
-slurm-*.out
-slurm 
+slurm-*.out 
 runs
+slurm-*.err
